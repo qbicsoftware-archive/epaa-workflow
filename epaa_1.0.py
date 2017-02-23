@@ -49,27 +49,31 @@ Workflow Version: 1.0
 
 Sample ID: $sample
 
-Alleles:
+Alleles
 -------------
 $alleles
 
-Used Prediction Methods:
+Used Prediction Methods
 -------------
 $methods
 
-Binding Assessment Criteria:
+Used Reference
+-------------
+$reference
+
+Binding Assessment Criteria
 -------------
 Syfpeithi predictions: prediction score > half max score of corresponding allele
 netMHC/netMHCpan predictions: affinity (as IC50 value in nM) <= 500
 
-Additional Steps:
+Additional Steps
 -------------
 NO filtering for peptide input.
 
 Filtering of self-peptides (Reviewed (Swiss-Prot) UP000005640 uniprot-all.fasta.gz - 29/02/16, ENSEMBL release 84 Homo_sapiens.GRCh38.pep.all.fa.gz - 27/04/2016)
 When personalized protein sequences are provided, peptides will be filtered against those as well.
 
-Stats:
+Stats
 -------------
 Number of Variants: $variants
 Number of Peptides: $peptides
@@ -80,7 +84,7 @@ Number of Predicted Non-Binders: $nonbinders
 Number of Binding Peptides: $uniquebinders
 Number of Non-Binding Peptides: $uniquenonbinders
 
-Contacts:
+Contacts
 -------------
 mohr@informatik.uni-tuebingen.de
 walzer@informatik.uni-tuebingen.de
@@ -137,7 +141,7 @@ def read_GSvar(filename, pass_only=True):
     """
     global ID_SYSTEM_USED
     RE = re.compile("(\w+):([\w.]+):([&\w]+):\w*:exon(\d+)\D*\d*:(c.\D*([_\d]+)\D*):(p.\D*(\d+)\w*)")
-   
+
     list_vars = list()
     lines = list()
     transcript_ids = []
@@ -517,6 +521,35 @@ def create_quant_column_value_for_result(row, dict):
     return ','.join(values)
 
 
+#defined as : RPKM = (10^9 * C)/(N * L)
+# L = exon length in base-pairs for a gene
+# C = Number of reads mapped to a gene in a single sample
+# N = total (unique)mapped reads in the sample
+def create_expression_column_value_for_result(row, dict, deseq, transcript_objects):
+    ts = row['transcripts'].split(',')
+    if deseq:
+        for t in ts:
+            if t in dict:
+                value = dict[t]
+            else:
+                value = np.nan
+    else:
+        for t in ts:
+            if t in dict:
+                value = (10**9 * dict[t]) / (len(transcript_objects[t]) * sum([dict[k] for k in dict.keys() if not (k.startswith('__'))]))
+            else:
+                value = np.nan
+    return value
+
+
+def create_quant_column_value_for_result(row, dict):
+    values = []
+    for p in row['proteins'].split(','):
+        if p in dict:
+            values.append(dict[p])
+    return ','.join(values)
+
+
 def write_prediction_report(values):
     s = Template(REPORT_TEMPLATE)
     return s.substitute(values)
@@ -638,6 +671,8 @@ def make_predictions_from_variants(variants, methods, alleles, minlength, maxlen
     # list to hold peptide protein connections
     pep_proteins = []
 
+    transcripts = {}
+
     prots = [p for p in generator.generate_proteins_from_transcripts(generator.generate_transcripts_from_variants(variants, martsadapter, ID_SYSTEM_USED))]
 
     for peplen in range(minlength, maxlength):
@@ -646,6 +681,8 @@ def make_predictions_from_variants(variants, methods, alleles, minlength, maxlen
         peptide_gen = generator.generate_peptides_from_proteins(prots, peplen)
 
         peptides_var = [x for x in peptide_gen]
+
+        # remove peptides which are not 'variant relevant'
         peptides = [x for x in peptides_var if any(x.get_variants_by_protein(y) for y in x.proteins.keys())]
 
         # filter out self peptides
@@ -657,6 +694,7 @@ def make_predictions_from_variants(variants, methods, alleles, minlength, maxlen
 
         for pep in filtered_peptides:
             for t in pep.get_all_transcripts():
+                transcripts[t.transcript_id.split(':')[0]] = t
                 pep_transcripts.append([str(pep), t.transcript_id.split(':')[0]])
 
         for pep in filtered_peptides:
@@ -716,7 +754,7 @@ def make_predictions_from_variants(variants, methods, alleles, minlength, maxlen
     statistics = {'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'sample': identifier, 'alleles': '\n'.join([str(a) for a in alleles]),
         'methods': '\n'.join(methods), 'variants': len(variants), 'peptides': len(all_peptides), 'filter': len(all_peptides_filtered)}
 
-    return pred_dataframes, statistics, pep_transcripts, pep_proteins
+    return pred_dataframes, statistics, pep_transcripts, transcripts, pep_proteins
 
 
 def make_predictions_from_peptides(peptides, methods, alleles, protein_db, identifier, metadata):
@@ -789,7 +827,7 @@ def make_predictions_from_peptides(peptides, methods, alleles, protein_db, ident
 
     # write prediction statistics
     statistics = {'date': str(datetime.now().strftime("%Y-%m-%d %H:%M:%S")), 'sample': identifier, 'alleles': '\n'.join([str(a) for a in alleles]), 'methods': '\n'.join(methods),
-    'variants': '-', 'peptides': len(peptides), 'filter': len(peptides_filtered)}
+    'variants': '-', 'peptides': len(peptides), 'filter': len(peptides_filtered), 'reference': '-'}
 
     return pred_dataframes, statistics
 
@@ -883,7 +921,7 @@ def __main__():
         if args.peptides:
             pred_dataframes, statistics = make_predictions_from_peptides(peptides, methods, alleles, up_db, args.identifier, metadata)
         else:
-            pred_dataframes, statistics, pep_transcripts, pep_proteins = make_predictions_from_variants(vl, methods, alleles, 8, 12, ma, up_db, args.identifier, metadata, transcriptProteinMap)
+            pred_dataframes, statistics, pep_transcripts, transcripts_objs, pep_proteins = make_predictions_from_variants(vl, methods, alleles, 8, 12, ma, up_db, args.identifier, metadata, transcriptProteinMap)
     else:
         methods = ['netmhcII-2.2', 'syfpeithi-1.0', 'netmhcIIpan-3.1']
         if args.peptides:
@@ -945,7 +983,7 @@ def __main__():
         df.to_csv("{}_protein_values.tsv".format(args.identifier), '\t', index=False)
 
         # add column to result dataframe
-        df['protein log2ratio'] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant), axis=1)
+        complete_df['protein log2ratio'] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant), axis=1)
 
 
     # parse differential expression analysis results (DESe2), annotate features (genes/transcripts)
@@ -953,13 +991,18 @@ def __main__():
         fold_changes = read_diff_expression_values(args.differential_expression)
         unique_data = [list(x) for x in set(tuple(x) for x in pep_transcripts)]
         df = pd.DataFrame(unique_data, columns=['peptide', 'transcript'])
-        df['normal_vs_tumor.log2FoldChange'] = df.apply(lambda row: create_quant_column_value(row, fold_changes), axis=1)
+
+        if 'HTSeq' in args.differential_expression:
+            col_name = 'RNA expression (rkpm)'
+        else:
+            col_name = 'RNA normal_vs_tumor.log2FoldChange'
+        df[col_name] = df.apply(lambda row: create_quant_column_value(row, fold_changes), axis=1)
         # write dataframe to tsv
         df.fillna('')
         df.to_csv("{}_transcript_values.tsv".format(args.identifier), '\t', index=False)
 
         # add column to result dataframe
-        df['RNA normal_vs_tumor.log2FoldChange'] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, fold_changes), axis=1)
+        complete_df[col_name] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, fold_changes, transcripts_objs), axis=1)
 
     # write dataframe to tsv
     complete_df.fillna('')
@@ -970,6 +1013,9 @@ def __main__():
     statistics['nonbinders'] = len(neg_predictions)
     statistics['uniquebinders'] = len(set(binders))
     statistics['uniquenonbinders'] = len(set(non_binders) - set(binders))
+
+    if 'reference' not in statistics:
+        statistics['reference'] = args.reference
 
     with open('{}_prediction_statistics.txt'.format(args.identifier), 'w') as stats:
         stats.write(write_prediction_report(statistics))
