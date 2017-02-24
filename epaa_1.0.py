@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import Fred2.Core.Generator as generator
 
+from collections import defaultdict
 from Fred2.IO.MartsAdapter import MartsAdapter
 from Fred2.Core.Variant import Variant, VariationType, MutationSyntax
 from Fred2.EpitopePrediction import EpitopePredictorFactory
@@ -653,7 +654,7 @@ def create_binder_values(aff, method):
     else:
         return np.nan
 
-def make_predictions_from_variants(variants, methods, alleles, minlength, maxlength, martsadapter, protein_db, identifier, metadata, transcriptProteinMap):
+def make_predictions_from_variants(variants_all, methods, alleles, minlength, maxlength, martsadapter, protein_db, identifier, metadata, transcriptProteinMap):
     # list for all peptides and filtered peptides
     all_peptides = []
     all_peptides_filtered = []
@@ -673,86 +674,94 @@ def make_predictions_from_variants(variants, methods, alleles, minlength, maxlen
 
     transcripts = {}
 
-    prots = [p for p in generator.generate_proteins_from_transcripts(generator.generate_transcripts_from_variants(variants, martsadapter, ID_SYSTEM_USED))]
+    # get variants and group them by chromosome
+    variants_dict = defaultdict(list)
+    for v in variants_all:
+        variants_dict[v.chrom].append(v)
 
-    for peplen in range(minlength, maxlength):
-        logging.info("Prediction of length %i" % (peplen))
+    for c in variants_dict:
+        variants = variants_dict[c]
 
-        peptide_gen = generator.generate_peptides_from_proteins(prots, peplen)
+        prots = [p for p in generator.generate_proteins_from_transcripts(generator.generate_transcripts_from_variants(variants, martsadapter, ID_SYSTEM_USED))]
 
-        peptides_var = [x for x in peptide_gen]
+        for peplen in range(minlength, maxlength):
+            logging.info("Prediction of length %i" % (peplen))
 
-        # remove peptides which are not 'variant relevant'
-        peptides = [x for x in peptides_var if any(x.get_variants_by_protein(y) for y in x.proteins.keys())]
+            peptide_gen = generator.generate_peptides_from_proteins(prots, peplen)
 
-        # filter out self peptides
-        selfies = [str(p) for p in peptides if protein_db.exists(str(p))]
-        filtered_peptides = [p for p in peptides if str(p) not in selfies]
+            peptides_var = [x for x in peptide_gen]
 
-        all_peptides = all_peptides + peptides
-        all_peptides_filtered = all_peptides_filtered + filtered_peptides
+            # remove peptides which are not 'variant relevant'
+            peptides = [x for x in peptides_var if any(x.get_variants_by_protein(y) for y in x.proteins.keys())]
 
-        for pep in filtered_peptides:
-            for t in pep.get_all_transcripts():
-                transcripts[t.transcript_id.split(':')[0]] = t
-                pep_transcripts.append([str(pep), t.transcript_id.split(':')[0]])
+            # filter out self peptides
+            selfies = [str(p) for p in peptides if protein_db.exists(str(p))]
+            filtered_peptides = [p for p in peptides if str(p) not in selfies]
 
-        for pep in filtered_peptides:
-            for t in pep.get_all_transcripts():
-                #protein IDs will be filtered already according to ID system
-                    pep_proteins.append([str(pep), set(transcriptProteinMap[t.transcript_id.split(':')[0]])])
+            all_peptides = all_peptides + peptides
+            all_peptides_filtered = all_peptides_filtered + filtered_peptides
 
-        # run prediction for peptides of length peplen for all alleles and all methods
-        results = []
+            for pep in filtered_peptides:
+                for t in pep.get_all_transcripts():
+                    transcripts[t.transcript_id.split(':')[0]] = t
+                    pep_transcripts.append([str(pep), t.transcript_id.split(':')[0]])
 
-        for m in methods:
-            try:
-                results.extend([EpitopePredictorFactory(m.split('-')[0], version=m.split('-')[1]).predict(filtered_peptides, alleles=alleles)])
-            except:
-                logging.warning("Prediction for length {length} and allele {allele} not possible with {method}. No model available.".format(length=peplen, allele=','.join([str(a) for a in alleles]), method=m))
+            for pep in filtered_peptides:
+                for t in pep.get_all_transcripts():
+                    #protein IDs will be filtered already according to ID system
+                        pep_proteins.append([str(pep), set(transcriptProteinMap[t.transcript_id.split(':')[0]])])
 
-        if(len(results) == 0):
-            continue
+            # run prediction for peptides of length peplen for all alleles and all methods
+            results = []
 
-        df = results[0].merge_results(results[1:])
+            for m in methods:
+                try:
+                    results.extend([EpitopePredictorFactory(m.split('-')[0], version=m.split('-')[1]).predict(filtered_peptides, alleles=alleles)])
+                except:
+                    logging.warning("Prediction for length {length} and allele {allele} not possible with {method}. No model available.".format(length=peplen, allele=','.join([str(a) for a in alleles]), method=m))
 
-        for a in alleles:
-            conv_allele = "%s_%s%s" % (a.locus, a.supertype, a.subtype)
-            allele_string_map['%s_%s' % (a, peplen)] = '%s_%i' % (conv_allele, peplen)
-            max_values_matrices['%s_%i' % (conv_allele, peplen)] = get_matrix_max_score(conv_allele, peplen)
+            if(len(results) == 0):
+                continue
 
-        df.insert(0, 'length', df.index.map(create_length_column_value))
-        df['chr'] = df.index.map(create_variant_chr_column_value)
-        df['pos'] = df.index.map(create_variant_pos_column_value)
-        df['gene'] = df.index.map(create_gene_column_value)
-        df['transcripts'] = df.index.map(create_transcript_column_value)
-        df['proteins'] = df.index.map(create_protein_column_value)
-        df['variant type'] = df.index.map(create_variant_type_column_value)
-        df['synonymous'] = df.index.map(create_variant_syn_column_value)
-        df['homozygous'] = df.index.map(create_variant_hom_column_value)
-        df['variant details (genomic)'] = df.index.map(create_mutationsyntax_genome_column_value)
-        df['variant details (protein)'] = df.index.map(create_mutationsyntax_column_value)
+            df = results[0].merge_results(results[1:])
 
-        # reset index to have index as columns
-        df.reset_index(inplace=True)
+            for a in alleles:
+                conv_allele = "%s_%s%s" % (a.locus, a.supertype, a.subtype)
+                allele_string_map['%s_%s' % (a, peplen)] = '%s_%i' % (conv_allele, peplen)
+                max_values_matrices['%s_%i' % (conv_allele, peplen)] = get_matrix_max_score(conv_allele, peplen)
 
-        for c in df.columns:
-            if '*' in str(c):
-                idx = df.columns.get_loc(c)
-                df.insert(idx + 1, '%s affinity' % c, df.apply(lambda x: create_affinity_values(str(c), int(x['length']), float(x[c]), x['Method'], max_values_matrices, allele_string_map), axis=1))
-                df.insert(idx + 2, '%s binder' % c, df.apply(lambda x: create_binder_values(float(x['%s affinity' % c]), x['Method']), axis=1))
-                df = df.rename(columns={c: '%s score' % c})
-                df['%s score' % c] = df['%s score' % c].map(lambda x: round(x, 4))
+            df.insert(0, 'length', df.index.map(create_length_column_value))
+            df['chr'] = df.index.map(create_variant_chr_column_value)
+            df['pos'] = df.index.map(create_variant_pos_column_value)
+            df['gene'] = df.index.map(create_gene_column_value)
+            df['transcripts'] = df.index.map(create_transcript_column_value)
+            df['proteins'] = df.index.map(create_protein_column_value)
+            df['variant type'] = df.index.map(create_variant_type_column_value)
+            df['synonymous'] = df.index.map(create_variant_syn_column_value)
+            df['homozygous'] = df.index.map(create_variant_hom_column_value)
+            df['variant details (genomic)'] = df.index.map(create_mutationsyntax_genome_column_value)
+            df['variant details (protein)'] = df.index.map(create_mutationsyntax_column_value)
 
-        for c in metadata:
-            df[c] = df.apply(lambda row: create_metadata_column_value(row, c), axis=1)
+            # reset index to have index as columns
+            df.reset_index(inplace=True)
 
-        df = df.rename(columns={'Seq': 'sequence'})
-        df = df.rename(columns={'Method': 'method'})
-        pred_dataframes.append(df)
+            for c in df.columns:
+                if '*' in str(c):
+                    idx = df.columns.get_loc(c)
+                    df.insert(idx + 1, '%s affinity' % c, df.apply(lambda x: create_affinity_values(str(c), int(x['length']), float(x[c]), x['Method'], max_values_matrices, allele_string_map), axis=1))
+                    df.insert(idx + 2, '%s binder' % c, df.apply(lambda x: create_binder_values(float(x['%s affinity' % c]), x['Method']), axis=1))
+                    df = df.rename(columns={c: '%s score' % c})
+                    df['%s score' % c] = df['%s score' % c].map(lambda x: round(x, 4))
+
+            for c in metadata:
+                df[c] = df.apply(lambda row: create_metadata_column_value(row, c), axis=1)
+
+            df = df.rename(columns={'Seq': 'sequence'})
+            df = df.rename(columns={'Method': 'method'})
+            pred_dataframes.append(df)
 
     statistics = {'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'sample': identifier, 'alleles': '\n'.join([str(a) for a in alleles]),
-        'methods': '\n'.join(methods), 'variants': len(variants), 'peptides': len(all_peptides), 'filter': len(all_peptides_filtered)}
+        'methods': '\n'.join(methods), 'variants': len(variants_all), 'peptides': len(all_peptides), 'filter': len(all_peptides_filtered)}
 
     return pred_dataframes, statistics, pep_transcripts, transcripts, pep_proteins
 
