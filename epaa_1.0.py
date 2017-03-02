@@ -143,9 +143,14 @@ def read_GSvar(filename, pass_only=True):
     global ID_SYSTEM_USED
     RE = re.compile("(\w+):([\w.]+):([&\w]+):\w*:exon(\d+)\D*\d*:(c.\D*([_\d]+)\D*):(p.\D*(\d+)\w*)")
 
+    metadata_list = ["vardbid", "normal_dp", "tumor_dp", "tumor_af", "normal_af", "rna_tum_freq", "rna_tum_depth"]
+
     list_vars = list()
     lines = list()
     transcript_ids = []
+    dict_vars = {}
+
+    cases = 0
 
     with open(filename, 'rb') as tsvfile:
         tsvreader = csv.DictReader((row for row in tsvfile if not row.startswith('##')), delimiter='\t')
@@ -217,8 +222,7 @@ def read_GSvar(filename, pass_only=True):
                 coding[nm_id] = MutationSyntax(nm_id, int(trans_pos.split('_')[0])-1, int(prot_start)-1, trans_coding, prot_coding)
                 transcript_ids.append(nm_id)  
         if coding:
-            var = Variant(mut_id, vt, chrom.strip('chr'), int(genome_start),
-                        ref.upper(), alt.upper(), coding, isHomozygous, isSynonymous=isyn)
+            var = Variant(mut_id, vt, chrom.strip('chr'), int(genome_start), ref.upper(), alt.upper(), coding, isHomozygous, isSynonymous=isyn)
             var.gene = gene
             var.log_metadata("vardbid", variation_dbid)
             var.log_metadata("normal_dp", norm_depth)
@@ -227,9 +231,26 @@ def read_GSvar(filename, pass_only=True):
             var.log_metadata("normal_af", normal_af)
             var.log_metadata("rna_tum_freq", rna_tum_freq)
             var.log_metadata("rna_tum_depth", rna_tum_dp)
+            dict_vars[var] = var
             list_vars.append(var)
 
-    return list_vars, transcript_ids, ["vardbid", "normal_dp", "tumor_dp", "tumor_af", "normal_af", "rna_tum_freq", "rna_tum_depth"]
+    transToVar = {}
+
+    # fix because of memory/timing issues due to combinatoric explosion
+    for v in list_vars:
+        for trans_id in v.coding.iterkeys():
+            transToVar.setdefault(trans_id, []).append(v)
+
+    for tId, vs in transToVar.iteritems():
+        if len(vs) > 10:
+            cases += 1
+            for v in vs:
+                vs_new = Variant(v.id, v.type, v.chrom, v.genomePos, v.ref, v.obs, v.coding, True, v.isSynonymous)
+                vs_new.gene = v.gene
+                for m in metadata_list:
+                    vs_new.log_metadata(m, v.get_metadata(m)[0])
+                dict_vars[v] = vs_new
+    return dict_vars.values(), transcript_ids, metadata_list
 
 
 def read_vcf(filename, pass_only=True):
@@ -246,6 +267,7 @@ def read_vcf(filename, pass_only=True):
         vcf_reader = vcf.Reader(tsvfile)
         vl = [r for r in vcf_reader]
 
+    dict_vars = {}
     list_vars = []
     transcript_ids = []
     genotye_dict = {"het": False, "hom": True, "ref": True}
@@ -341,9 +363,26 @@ def read_vcf(filename, pass_only=True):
                     var = Variant("line" + str(num), vt, c, pos, reference, alternative, coding, isHomozygous, isSynonymous)
                     var.gene = gene
                     var.log_metadata("vardbid", variation_dbid)
+                    dict_vars[var] = var
                     list_vars.append(var)
 
-    return list_vars, transcript_ids
+    transToVar = {}
+
+    # fix because of memory/timing issues due to combinatoric explosion
+    for v in list_vars:
+        for trans_id in v.coding.iterkeys():
+            transToVar.setdefault(trans_id, []).append(v)
+
+    for tId, vs in transToVar.iteritems():
+        if len(vs) > 10:
+            for v in vs:
+                vs_new = Variant(v.id, v.type, v.chrom, v.genomePos, v.ref, v.obs, v.coding, True, v.isSynonymous)
+                vs_new.gene = v.gene
+                for m in ["vardbid"]:
+                    vs_new.log_metadata(m, v.get_metadata(m))
+                dict_vars[v] = vs_new
+
+    return dict_vars.values(), transcript_ids
 
 
 def read_peptide_input(filename):
@@ -482,28 +521,36 @@ def create_variant_type_column_value(pep):
 
 
 def create_variant_syn_column_value(pep):
-
-    v = [x.vars.values() for x in pep[0].get_all_transcripts()]
-    vf = list(itertools.chain.from_iterable(v))
-    return ','.join(set([str(y.isSynonymous) for y in set(vf)]))
+    transcript_ids = [x.transcript_id for x in set(pep[0].get_all_transcripts())]
+    variants = []
+    for t in transcript_ids:
+        variants.extend([v for v in pep[0].get_variants_by_protein(t)])
+    return ','.join(set([str(y.isSynonymous) for y in set(variants)]))
 
 
 def create_variant_hom_column_value(pep):
-    v = [x.vars.values() for x in pep[0].get_all_transcripts()]
-    vf = list(itertools.chain.from_iterable(v))
-    return ','.join(set([str(y.isHomozygous) for y in set(vf)]))
+    transcript_ids = [x.transcript_id for x in set(pep[0].get_all_transcripts())]
+    variants = []
+    for t in transcript_ids:
+        variants.extend([v for v in pep[0].get_variants_by_protein(t)])
+    return ','.join(set([str(y.isHomozygous) for y in set(variants)]))
 
 
 def create_coding_column_value(pep):
-    v = [x.vars.values() for x in pep[0].get_all_transcripts()]
-    vf = list(itertools.chain.from_iterable(v))
-    return ','.join(set([str(y.coding) for y in set(vf)]))
+    transcript_ids = [x.transcript_id for x in set(pep[0].get_all_transcripts())]
+    variants = []
+    for t in transcript_ids:
+        variants.extend([v for v in pep[0].get_variants_by_protein(t)])
+    return ','.join(set([str(y.coding) for y in set(variants)]))
 
 
 def create_metadata_column_value(pep, c):
-    v = [x.vars.values() for x in pep[0].get_all_transcripts()]
-    vf = list(itertools.chain.from_iterable(v))
-    return ','.join(set([str(y.get_metadata(c)[0]) for y in set(vf)]))
+    transcript_ids = [x.transcript_id for x in set(pep[0].get_all_transcripts())]
+    variants = []
+    for t in transcript_ids:
+        variants.extend([v for v in pep[0].get_variants_by_protein(t)])
+
+    return ','.join(set([str(y.get_metadata(c)[0]) for y in set(variants)]))
 
 
 def create_quant_column_value(row, dict):
@@ -513,21 +560,16 @@ def create_quant_column_value(row, dict):
         value = np.nan
     return value
 
-
-def create_quant_column_value_for_result(row, dict):
-    values = []
-    for p in row['proteins'].split(','):
-        if p in dict:
-            values.append(dict[p])
-    return ','.join(values)
-
-
 #defined as : RPKM = (10^9 * C)/(N * L)
 # L = exon length in base-pairs for a gene
 # C = Number of reads mapped to a gene in a single sample
 # N = total (unique)mapped reads in the sample
-def create_expression_column_value_for_result(row, dict, deseq, transcript_objects):
+def create_expression_column_value_for_result(row, dict, deseq):
     ts = row['transcripts'].split(',')
+    transcript_objects = {}
+    for t in row[0].get_all_transcripts():
+        transcript_objects[t.transcript_id.split(':')[0]] = t
+
     if deseq:
         for t in ts:
             if t in dict:
@@ -607,11 +649,9 @@ def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url):
         key = 'Ensembl Transcript ID'
         for dic in tsvselect:
             if dic[key] in result:
-                #merged = result[dic[key]] + [dic['Ensembl Protein ID']]
                 merged = result[dic[key]] + [dic['Protein ID']]
                 result[dic[key]] = merged
             else:
-                #result[dic[key]] = [dic['Ensembl Protein ID']]
                 result[dic[key]] = [dic['Protein ID']]
     else:
         key = 'RefSeq mRNA [e.g. NM_001195597]'
@@ -666,14 +706,6 @@ def make_predictions_from_variants(variants_all, methods, alleles, minlength, ma
     # list to hold dataframes for all predictions
     pred_dataframes = []
 
-    # list to hold peptide transcript connections
-    pep_transcripts = []
-
-    # list to hold peptide protein connections
-    pep_proteins = []
-
-    transcripts = {}
-
     # get variants and group them by chromosome
     variants_dict = defaultdict(list)
     for v in variants_all:
@@ -685,8 +717,6 @@ def make_predictions_from_variants(variants_all, methods, alleles, minlength, ma
         prots = [p for p in generator.generate_proteins_from_transcripts(generator.generate_transcripts_from_variants(variants, martsadapter, ID_SYSTEM_USED))]
 
         for peplen in range(minlength, maxlength):
-            logging.info("Prediction of length %i" % (peplen))
-
             peptide_gen = generator.generate_peptides_from_proteins(prots, peplen)
 
             peptides_var = [x for x in peptide_gen]
@@ -701,24 +731,14 @@ def make_predictions_from_variants(variants_all, methods, alleles, minlength, ma
             all_peptides = all_peptides + peptides
             all_peptides_filtered = all_peptides_filtered + filtered_peptides
 
-            for pep in filtered_peptides:
-                for t in pep.get_all_transcripts():
-                    transcripts[t.transcript_id.split(':')[0]] = t
-                    pep_transcripts.append([str(pep), t.transcript_id.split(':')[0]])
-
-            for pep in filtered_peptides:
-                for t in pep.get_all_transcripts():
-                    #protein IDs will be filtered already according to ID system
-                        pep_proteins.append([str(pep), set(transcriptProteinMap[t.transcript_id.split(':')[0]])])
-
-            # run prediction for peptides of length peplen for all alleles and all methods
             results = []
 
-            for m in methods:
-                try:
-                    results.extend([EpitopePredictorFactory(m.split('-')[0], version=m.split('-')[1]).predict(filtered_peptides, alleles=alleles)])
-                except:
-                    logging.warning("Prediction for length {length} and allele {allele} not possible with {method}. No model available.".format(length=peplen, allele=','.join([str(a) for a in alleles]), method=m))
+            if len(filtered_peptides) > 0:
+                for m in methods:
+                    try:
+                        results.extend([EpitopePredictorFactory(m.split('-')[0], version=m.split('-')[1]).predict(filtered_peptides, alleles=alleles)])
+                    except:
+                        logging.warning("Prediction for length {length} and allele {allele} not possible with {method}.".format(length=peplen, allele=','.join([str(a) for a in alleles]), method=m))
 
             if(len(results) == 0):
                 continue
@@ -763,7 +783,7 @@ def make_predictions_from_variants(variants_all, methods, alleles, minlength, ma
     statistics = {'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'sample': identifier, 'alleles': '\n'.join([str(a) for a in alleles]),
         'methods': '\n'.join(methods), 'variants': len(variants_all), 'peptides': len(all_peptides), 'filter': len(all_peptides_filtered)}
 
-    return pred_dataframes, statistics, pep_transcripts, transcripts, pep_proteins
+    return pred_dataframes, statistics
 
 
 def make_predictions_from_peptides(peptides, methods, alleles, protein_db, identifier, metadata):
@@ -930,20 +950,22 @@ def __main__():
         if args.peptides:
             pred_dataframes, statistics = make_predictions_from_peptides(peptides, methods, alleles, up_db, args.identifier, metadata)
         else:
-            pred_dataframes, statistics, pep_transcripts, transcripts_objs, pep_proteins = make_predictions_from_variants(vl, methods, alleles, 8, 12, ma, up_db, args.identifier, metadata, transcriptProteinMap)
+            #pred_dataframes, statistics, pep_transcripts, transcripts_objs, pep_proteins = make_predictions_from_variants(vl, methods, alleles, 8, 12, ma, up_db, args.identifier, metadata, transcriptProteinMap)
+            pred_dataframes, statistics = make_predictions_from_variants(vl, methods, alleles, 8, 12, ma, up_db, args.identifier, metadata, transcriptProteinMap)
     else:
         methods = ['netmhcII-2.2', 'syfpeithi-1.0', 'netmhcIIpan-3.1']
         if args.peptides:
             pred_dataframes, statistics = make_predictions_from_peptides(peptides, methods, alleles, up_db, args.identifier, metadata)
         else:
-            pred_dataframes, statistics, pep_transcripts, pep_proteins = make_predictions_from_variants(vl, methods, alleles, 15, 17, ma, up_db, args.identifier, metadata, transcriptProteinMap)
+            #pred_dataframes, statistics, pep_transcripts, pep_proteins = make_predictions_from_variants(vl, methods, alleles, 15, 17, ma, up_db, args.identifier, metadata, transcriptProteinMap)
+            pred_dataframes, statistics = make_predictions_from_variants(vl, methods, alleles, 15, 17, ma, up_db, args.identifier, metadata, transcriptProteinMap)
 
     # concat dataframes for all peptide lengths
     try:
         complete_df = pd.concat(pred_dataframes)
     except:
         complete_df = pd.DataFrame()
-        logging.error("NO PREDICTIONS AVAILABLE.")
+        logging.error("No predictions available.")
 
     # store version of used methods
     method_map = {}
@@ -984,34 +1006,18 @@ def __main__():
     # parse protein quantification results, annotate proteins for samples
     if args.protein_quantification is not None:
         protein_quant = read_protein_quant(args.protein_quantification)
-        unique_data = [list(x) for x in set(tuple(x) for x in pep_proteins)]
-        df = pd.DataFrame(unique_data, columns=['peptide', 'protein'])
-        df['log2ratio'] = df.apply(lambda row: create_quant_column_value(row, protein_quant), axis=1)
-        # write dataframe to tsv
-        df.fillna('')
-        df.to_csv("{}_protein_values.tsv".format(args.identifier), '\t', index=False)
-
         # add column to result dataframe
         complete_df['protein log2ratio'] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant), axis=1)
-
 
     # parse differential expression analysis results (DESe2), annotate features (genes/transcripts)
     if args.differential_expression is not None:
         fold_changes = read_diff_expression_values(args.differential_expression)
-        unique_data = [list(x) for x in set(tuple(x) for x in pep_transcripts)]
-        df = pd.DataFrame(unique_data, columns=['peptide', 'transcript'])
-
         if 'HTSeq' in args.differential_expression:
             col_name = 'RNA expression (rkpm)'
         else:
             col_name = 'RNA normal_vs_tumor.log2FoldChange'
-        df[col_name] = df.apply(lambda row: create_quant_column_value(row, fold_changes), axis=1)
-        # write dataframe to tsv
-        df.fillna('')
-        df.to_csv("{}_transcript_values.tsv".format(args.identifier), '\t', index=False)
-
         # add column to result dataframe
-        complete_df[col_name] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, fold_changes, transcripts_objs), axis=1)
+        complete_df[col_name] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, fold_changes), axis=1)
 
     # write dataframe to tsv
     complete_df.fillna('')
