@@ -589,7 +589,7 @@ def create_expression_column_value_for_result(row, dict, deseq, gene_id_lengths)
                     logging.warning("FKPM value will be based on transcript length for {gene}. Because gene could not be found in the DB".format(gene=t))
             else:
                 values.append(np.nan)
-    values = [float("{0:.2f}".format(value)) for value in values]
+    values = ["{0:.2f}".format(value) for value in values]
     return ','.join(values)
 
 
