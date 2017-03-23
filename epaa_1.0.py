@@ -1027,7 +1027,6 @@ def __main__():
             with open(GENE_LIST, 'r') as gene_list:
                 for l in gene_list:
                     ids = l.split('\t')
-                    print(ids)
                     if ID_SYSTEM_USED == EIdentifierTypes.ENSEMBL:
                         gene_id_lengths[ids[0]] = float(ids[2].strip())
                     else:
