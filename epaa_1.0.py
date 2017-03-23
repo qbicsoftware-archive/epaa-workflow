@@ -572,24 +572,25 @@ def create_expression_column_value_for_result(row, dict, deseq, gene_id_lengths)
     #transcript_objects = {}
     #for t in row[0].get_all_transcripts():
     #    transcript_objects[t.transcript_id.split(':')[0]] = t
-
+    values = []
     if deseq:
         for t in ts:
             if t in dict:
-                value = dict[t]
+                values.append(dict[t])
             else:
-                value = np.nan
+                values.append(np.nan)
     else:
         for t in ts:
             if t in dict:
                 if t in gene_id_lengths:
-                    value = (10.0**9 * float(dict[t])) / (float(gene_id_lengths[t]) * sum([float(dict[k]) for k in dict.keys() if ((not k.startswith('__')) & (k in gene_id_lengths))]))
+                    values.append(10.0**9 * float(dict[t])) / (float(gene_id_lengths[t]) * sum([float(dict[k]) for k in dict.keys() if ((not k.startswith('__')) & (k in gene_id_lengths))]))
                 else:
-                    value = (10.0**9 * float(dict[t])) / (float(len(row[0].get_all_transcripts()[0])) * sum([float(dict[k]) for k in dict.keys() if ((not k.startswith('__')) & (k in gene_id_lengths))]))
+                    values.append(10.0**9 * float(dict[t])) / (float(len(row[0].get_all_transcripts()[0])) * sum([float(dict[k]) for k in dict.keys() if ((not k.startswith('__')) & (k in gene_id_lengths))]))
                     logging.warning("FKPM value will be based on transcript length for {gene}. Because gene could not be found in the DB".format(gene=t))
             else:
-                value = np.nan
-    return float("{0:.2f}".format(value))
+                values.append(np.nan)
+    values = [float("{0:.2f}".format(value)) for value in values]
+    return ','.join(values)
 
 
 def create_quant_column_value_for_result(row, dict):
