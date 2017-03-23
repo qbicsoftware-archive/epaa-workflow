@@ -1023,7 +1023,7 @@ def __main__():
         deseq = False
 
         if 'HTSeq' in args.differential_expression:
-            col_name = 'RNA expression (rkpm)'
+            col_name = 'RNA expression (RPKM)'
             with open(GENE_LIST, 'r') as gene_list:
                 for l in gene_list:
                     ids = l.split('\t')
