@@ -34,6 +34,9 @@ transcriptProteinMap = {}
 # Adapt depending on system
 REF_PATH = ['/lustre_cfc/qbic/reference_genomes/IRMA_references/uniprot_all_swissprot_UP000005640.fasta', '/lustre_cfc/qbic/reference_genomes/IRMA_references/Homo_sapiens.GRCh38.pep.all.fa']
 
+# List of coding genes
+GENE_LIST = '/lustre_cfc/qbic/reference_genomes/all_coding_genes_GRCh_ensembl_hgnc.tsv'
+
 REPORT_TEMPLATE = """
 ###################################################################
 
@@ -564,11 +567,11 @@ def create_quant_column_value(row, dict):
 # L = exon length in base-pairs for a gene
 # C = Number of reads mapped to a gene in a single sample
 # N = total (unique)mapped reads in the sample
-def create_expression_column_value_for_result(row, dict, deseq):
-    ts = row['transcripts'].split(',')
-    transcript_objects = {}
-    for t in row[0].get_all_transcripts():
-        transcript_objects[t.transcript_id.split(':')[0]] = t
+def create_expression_column_value_for_result(row, dict, deseq, gene_id_lengths):
+    ts = row['gene'].split(',')
+    #transcript_objects = {}
+    #for t in row[0].get_all_transcripts():
+    #    transcript_objects[t.transcript_id.split(':')[0]] = t
 
     if deseq:
         for t in ts:
@@ -579,10 +582,14 @@ def create_expression_column_value_for_result(row, dict, deseq):
     else:
         for t in ts:
             if t in dict:
-                value = (10**9 * dict[t]) / (len(transcript_objects[t]) * sum([dict[k] for k in dict.keys() if not (k.startswith('__'))]))
+                if t in gene_id_lengths:
+                    value = (10.0**9 * float(dict[t])) / (float(gene_id_lengths[t]) * sum([float(dict[k]) for k in dict.keys() if ((not k.startswith('__')) & (k in gene_id_lengths))]))
+                else:
+                    value = (10.0**9 * float(dict[t])) / (float(len(row[0].get_all_transcripts()[0])) * sum([float(dict[k]) for k in dict.keys() if ((not k.startswith('__')) & (k in gene_id_lengths))]))
+                    logging.warning("FKPM value will be based on transcript length for {gene}. Because gene could not be found in the DB".format(gene=t))
             else:
                 value = np.nan
-    return value
+    return float("{0:.2f}".format(value))
 
 
 def create_quant_column_value_for_result(row, dict):
@@ -1012,12 +1019,24 @@ def __main__():
     # parse differential expression analysis results (DESe2), annotate features (genes/transcripts)
     if args.differential_expression is not None:
         fold_changes = read_diff_expression_values(args.differential_expression)
+        gene_id_lengths = {}
+        deseq = False
+
         if 'HTSeq' in args.differential_expression:
             col_name = 'RNA expression (rkpm)'
+            with open(GENE_LIST, 'r') as gene_list:
+                for l in gene_list:
+                    ids = l.split('\t')
+                    print(ids)
+                    if ID_SYSTEM_USED == EIdentifierTypes.ENSEMBL:
+                        gene_id_lengths[ids[0]] = float(ids[2].strip())
+                    else:
+                        gene_id_lengths[ids[1]] = float(ids[2].strip())
         else:
             col_name = 'RNA normal_vs_tumor.log2FoldChange'
+            deseq = True
         # add column to result dataframe
-        complete_df[col_name] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, fold_changes), axis=1)
+        complete_df[col_name] = complete_df.apply(lambda row: create_expression_column_value_for_result(row, fold_changes, deseq, gene_id_lengths), axis=1)
 
     # write dataframe to tsv
     complete_df.fillna('')
