@@ -654,7 +654,7 @@ def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url):
         tsvselect += [x for x in tsvreader]
 
     if(ENSEMBL):
-        key = 'Ensembl Transcript ID'
+        key = 'Transcript ID'
         for dic in tsvselect:
             if dic[key] in result:
                 merged = result[dic[key]] + [dic['Protein ID']]
