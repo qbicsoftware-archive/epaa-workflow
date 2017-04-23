@@ -911,7 +911,8 @@ def __main__():
 
     '''start the actual IRMA functions'''
     metadata = []
-    references = {'GRCh37': 'http://grch37.ensembl.org', 'GRCh38': 'http://ensembl.org'}
+    #references = {'GRCh37': 'http://grch37.ensembl.org', 'GRCh38': 'http://ensembl.org'}
+    references = {'GRCh37': 'http://feb2014.archive.ensembl.org', 'GRCh38': 'http://dec2016.archive.ensembl.org'}
     global transcriptProteinMap
 
     '''read in variants or peptides'''
