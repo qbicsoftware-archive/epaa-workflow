@@ -654,13 +654,13 @@ def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url):
         tsvselect += [x for x in tsvreader]
 
     if(ENSEMBL):
-        key = 'Transcript ID'
+        key = 'Ensembl Transcript ID'
         for dic in tsvselect:
             if dic[key] in result:
-                merged = result[dic[key]] + [dic['Protein ID']]
+                merged = result[dic[key]] + [dic['Ensembl Protein ID']]
                 result[dic[key]] = merged
             else:
-                result[dic[key]] = [dic['Protein ID']]
+                result[dic[key]] = [dic['Ensembl Protein ID']]
     else:
         key = 'RefSeq mRNA [e.g. NM_001195597]'
         for dic in tsvselect:
@@ -896,19 +896,21 @@ def __main__():
     elif ((args.peptides is None) & (args.somatic_mutations is None)):
         parser.error("Please specify at least one of the following options: --somatic_mutations, --peptides")
 
-    logging.basicConfig(filename=os.path.join(args.output_dir,'{}_prediction.log'.format(args.identifier)), filemode='w+',
-                        level=logging.DEBUG)
-    logging.info("Starting predictions at " + str(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-
     if args.output_dir is not None:
         try:
             os.chdir(args.output_dir)
+            logging.basicConfig(filename=os.path.join(args.output_dir,'{}_prediction.log'.format(args.identifier)), filemode='w+',
+                        level=logging.DEBUG)
             logging.info("Using provided data directory: {}".format(str(args.output_dir)))
         except:
             logging.info("No such directory, using current.")
     else:
+        logging.basicConfig(filename='{}_prediction.log'.format(args.identifier), filemode='w+',
+                        level=logging.DEBUG)
         logging.info("Using current data directory.")
 
+    logging.info("Starting predictions at " + str(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    
     '''start the actual IRMA functions'''
     metadata = []
     #references = {'GRCh37': 'http://grch37.ensembl.org', 'GRCh38': 'http://ensembl.org'}
@@ -919,13 +921,13 @@ def __main__():
     if args.peptides is not None:
         peptides, metadata = read_peptide_input(args.peptides)
     else:
-        if args.somatic_mutations.endswith('.GSvar'):
+        if args.somatic_mutations.endswith('.GSvar') or args.somatic_mutations.endswith('.tsv'):
             vl, transcripts, metadata = read_GSvar(args.somatic_mutations)
         elif args.somatic_mutations.endswith('.vcf'):
             vl, transcripts = read_vcf(args.somatic_mutations)
 
         if args.germline_mutations is not None:
-            if args.germline_mutations.endswith('.GSvar'):
+            if args.germline_mutations.endswith('.GSvar') or args.germline_mutations.endswith('.tsv'):
                 vl_normal, transcripts_germline, metadata = read_GSvar(args.germline_mutations)
             elif args.germline_mutations.endswith('.vcf'):
                 vl_normal, transcripts_germline = read_vcf(args.germline_mutations)
@@ -1029,7 +1031,8 @@ def __main__():
             with open(GENE_LIST, 'r') as gene_list:
                 for l in gene_list:
                     ids = l.split('\t')
-                    if ID_SYSTEM_USED == EIdentifierTypes.ENSEMBL:
+                    gene_id_in_df = complete_df.iloc[1]['gene']
+                    if 'ENSG' in gene_id_in_df:
                         gene_id_lengths[ids[0]] = float(ids[2].strip())
                     else:
                         gene_id_lengths[ids[1]] = float(ids[2].strip())
