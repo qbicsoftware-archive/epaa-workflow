@@ -606,7 +606,7 @@ def write_prediction_report(values):
     return s.substitute(values)
 
 
-def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url):
+def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url, reference):
     result = {}
 
     biomart_url = "{}/biomart/martservice?query=".format(ensembl_url)
@@ -653,14 +653,17 @@ def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url):
 
         tsvselect += [x for x in tsvreader]
 
+     
     if(ENSEMBL):
-        key = 'Ensembl Transcript ID'
+        #key = 'Ensembl Transcript ID'
+        key = 'Ensembl Transcript ID' if reference == 'GRCh37' else 'Transcript ID'
+        protein_key = 'Ensembl Protein ID' if reference == 'GRCh37' else 'Protein ID'
         for dic in tsvselect:
             if dic[key] in result:
-                merged = result[dic[key]] + [dic['Ensembl Protein ID']]
+                merged = result[dic[key]] + [dic[protein_key]]
                 result[dic[key]] = merged
             else:
-                result[dic[key]] = [dic['Ensembl Protein ID']]
+                result[dic[key]] = [dic[protein_key]]
     else:
         key = 'RefSeq mRNA [e.g. NM_001195597]'
         for dic in tsvselect:
@@ -937,7 +940,7 @@ def __main__():
             transcripts = transcripts_germline + transcripts
 
         transcripts = list(set(transcripts))
-        transcriptProteinMap = get_protein_ids_for_transcripts(ID_SYSTEM_USED, transcripts, references[args.reference])
+        transcriptProteinMap = get_protein_ids_for_transcripts(ID_SYSTEM_USED, transcripts, references[args.reference], args.reference)
 
     # get the alleles
     alleles = FileReader.read_lines(args.alleles, in_type=Allele)
