@@ -32,6 +32,7 @@ VERSION = "1.1"
 
 ID_SYSTEM_USED = EIdentifierTypes.ENSEMBL
 transcriptProteinMap = {}
+transcriptSwissProtMap = {}
 
 # Adapt depending on system
 REF_PATH = ['/lustre_cfc/qbic/reference_genomes/IRMA_references/uniprot_all_swissprot_UP000005640.fasta', '/lustre_cfc/qbic/reference_genomes/IRMA_references/Homo_sapiens.GRCh38.pep.all.fa']
@@ -424,9 +425,9 @@ def read_protein_quant(filename):
                 valuedict = {}
                 for key, val in row.iteritems():
                     if 'LFQ intensity' in key:
-                        valuedict[key.replace('LFQ intensity ', '')] = val
-                # do we have to split the ID somehow ?
-                intensities[row['Protein IDs']] = valuedict
+                        valuedict[key.replace('LFQ intensity ', '').split('/')[-1]] = val
+                for p in row['Protein IDs'].split(';'):
+                    intensities[p.split('|')[1]] = valuedict
     return intensities
 
 
@@ -568,8 +569,11 @@ def create_metadata_column_value(pep, c):
     variants = []
     for t in transcript_ids:
         variants.extend([v for v in pep[0].get_variants_by_protein(t)])
-
-    return ','.join(set([str(y.get_metadata(c)[0]) for y in set(variants)]))
+    meta = set([str(y.get_metadata(c)[0]) for y in set(variants)])
+    if len(meta) is 0:
+        return np.nan
+    else:
+        return ','.join(meta)
 
 
 def create_wt_seq_column_value(pep, wtseqs):
@@ -577,8 +581,11 @@ def create_wt_seq_column_value(pep, wtseqs):
     variants = []
     #for t in transcript_ids:
     #    variants.extend([v for v in pep[0].get_variants_by_protein(t)])
-
-    return ','.join(set([str(wtseqs['{}_{}'.format(str(pep[0]), t.transcript_id)]) for t in transcripts if bool(t.vars)]))
+    wt = set([str(wtseqs['{}_{}'.format(str(pep[0]), t.transcript_id)]) for t in transcripts if bool(t.vars)])
+    if len(wt) is 0:
+        return np.nan
+    else:
+        return ','.join(wt)
 
 
 def create_quant_column_value(row, dict):
@@ -618,12 +625,21 @@ def create_expression_column_value_for_result(row, dict, deseq, gene_id_lengths)
     return ','.join(values)
 
 
-def create_quant_column_value_for_result(row, dict):
+def create_quant_column_value_for_result(row, dict, swissProtDict, key):
+    all_proteins = [swissProtDict[x.transcript_id.split(':')[0]] for x in set(row[0].get_all_transcripts())]
+    all_proteins_filtered = set([item for sublist in all_proteins for item in sublist])
+
     values = []
-    for p in row['proteins'].split(','):
+    for p in all_proteins_filtered:
         if p in dict:
-            values.append(dict[p])
-    return ','.join(values)
+            if int(dict[p][key]) > 0:
+            	values.append(math.log(int(dict[p][key]),2))
+            else:
+                values.append(int(dict[p][key]))
+    if len(values) is 0:
+        return np.nan
+    else:
+        return ','.join(set([str(v) for v in values]))
 
 
 def create_ligandomics_column_value_for_result(row, lig_id, val, wild_type):
@@ -644,6 +660,7 @@ def write_prediction_report(values):
 
 def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url, reference):
     result = {}
+    result_swissProt = {}
 
     biomart_url = "{}/biomart/martservice?query=".format(ensembl_url)
     biomart_head = """
@@ -675,12 +692,14 @@ def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url, reference)
     else:
         input_lists += [transcripts]
 
+    attribut_swissprot = "uniprot_swissprot_accession" if reference == 'GRCh37' else 'uniprot_swissprot'
+
     tsvselect = []
     for l in input_lists:
         rq_n = biomart_head % ('hsapiens_gene_ensembl', 'default') \
              + biomart_filter % (idname, ','.join(l)) \
              + biomart_attribute % ("ensembl_peptide_id") \
-             + biomart_attribute % ("uniprot_swissprot") \
+             + biomart_attribute % (attribut_swissprot) \
              + biomart_attribute % ("refseq_peptide") \
              + biomart_attribute % (idname) \
              + biomart_tail
@@ -688,6 +707,8 @@ def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url, reference)
         tsvreader = csv.DictReader(urllib2.urlopen(biomart_url + urllib2.quote(rq_n)).read().splitlines(), dialect='excel-tab')
 
         tsvselect += [x for x in tsvreader]
+    
+    swissProtKey = 'UniProt/SwissProt Accession'
 
     if(ENSEMBL):
         key = 'Ensembl Transcript ID' if reference == 'GRCh37' else 'Transcript ID'
@@ -695,19 +716,25 @@ def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url, reference)
         for dic in tsvselect:
             if dic[key] in result:
                 merged = result[dic[key]] + [dic[protein_key]]
+                merged_swissProt = result_swissProt[dic[key]] + [dic[swissProtKey]]
                 result[dic[key]] = merged
+                result_swissProt[dic[key]] = merged_swissProt
             else:
-                result[dic[key]] = [dic[protein_key]] 
+                result[dic[key]] = [dic[protein_key]]
+                result_swissProt[dic[key]] = [dic[swissProtKey]] 
     else:
         key = 'RefSeq mRNA [e.g. NM_001195597]'
         for dic in tsvselect:
             if dic[key] in result:
                 merged = result[dic[key]] + [dic['RefSeq Protein ID [e.g. NP_001005353]']]
+                merged_swissProt = result_swissProt[dic[key]] + [dic[swissProtKey]]
                 result[dic[key]] = merged
+                result_swissProt[dic[key]] = merged_swissProt
             else:
                 result[dic[key]] = [dic['RefSeq Protein ID [e.g. NP_001005353]']]
+                result_swissProt[dic[key]] = [dic[swissProtKey]]
 
-    return result
+    return result, result_swissProt
 
 
 def get_matrix_max_score(allele, length):
@@ -996,6 +1023,7 @@ def __main__():
     #references = {'GRCh37': 'http://grch37.ensembl.org', 'GRCh38': 'http://ensembl.org'}
     references = {'GRCh37': 'http://feb2014.archive.ensembl.org', 'GRCh38': 'http://dec2016.archive.ensembl.org'}
     global transcriptProteinMap
+    global transcriptSwissProtMap
 
     '''read in variants or peptides'''
     if args.peptides is not None:
@@ -1017,7 +1045,7 @@ def __main__():
             transcripts = transcripts_germline + transcripts
 
         transcripts = list(set(transcripts))
-        transcriptProteinMap = get_protein_ids_for_transcripts(ID_SYSTEM_USED, transcripts, references[args.reference], args.reference)
+        transcriptProteinMap, transcriptSwissProtMap = get_protein_ids_for_transcripts(ID_SYSTEM_USED, transcripts, references[args.reference], args.reference)
 
     # get the alleles
     alleles = FileReader.read_lines(args.alleles, in_type=Allele)
@@ -1069,9 +1097,10 @@ def __main__():
     if args.wild_type:
         wt_sequences = generate_wt_seqs(all_peptides_filtered)
         complete_df['wt sequence'] = complete_df.apply(lambda row: create_wt_seq_column_value(row, wt_sequences), axis=1)
-
+        columns_tiles = ['sequence', 'wt sequence', 'length', 'chr', 'pos', 'gene', 'transcripts', 'proteins', 'variant type', 'method']
     # Change the order (the index) of the columns
-    columns_tiles = ['sequence', 'wt sequence', 'length', 'chr', 'pos', 'gene', 'transcripts', 'proteins', 'variant type', 'method']
+    else:
+        columns_tiles = ['sequence', 'length', 'chr', 'pos', 'gene', 'transcripts', 'proteins', 'variant type', 'method']
     for c in complete_df.columns:
         if c not in columns_tiles:
             columns_tiles.append(c)
@@ -1097,13 +1126,17 @@ def __main__():
             neg_predictions.append(str(r['sequence']))
             if str(r['sequence']) not in binders:
                 non_binders.append(str(r['sequence']))
-
+    
     # parse protein quantification results, annotate proteins for samples
     if args.protein_quantification is not None:
         protein_quant = read_protein_quant(args.protein_quantification)
+        first_entry = protein_quant[protein_quant.keys()[0]]
+        sample1 = first_entry.keys()[0]
+        sample2 = first_entry.keys()[1]
         # add column to result dataframe
-        complete_df['protein log2ratio'] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant), axis=1)
-
+        complete_df['{} log2 protein LFQ intensity'.format(sample1)] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant, transcriptSwissProtMap, sample1), axis=1)
+        complete_df['{} log2 protein LFQ intensity'.format(sample2)] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant, transcriptSwissProtMap, sample2), axis=1)
+    
     # parse differential expression analysis results (DESe2), annotate features (genes/transcripts)
     if args.differential_expression is not None:
         fold_changes = read_diff_expression_values(args.differential_expression)
