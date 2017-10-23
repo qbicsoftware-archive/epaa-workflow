@@ -1131,11 +1131,13 @@ def __main__():
     if args.protein_quantification is not None:
         protein_quant = read_protein_quant(args.protein_quantification)
         first_entry = protein_quant[protein_quant.keys()[0]]
-        sample1 = first_entry.keys()[0]
-        sample2 = first_entry.keys()[1]
+        for k in first_entry.keys():
+            complete_df['{} log2 protein LFQ intensity'.format(k)] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant, transcriptSwissProtMap, k), axis=1)
+        #sample1 = first_entry.keys()[0]
+        #sample2 = first_entry.keys()[1]
         # add column to result dataframe
-        complete_df['{} log2 protein LFQ intensity'.format(sample1)] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant, transcriptSwissProtMap, sample1), axis=1)
-        complete_df['{} log2 protein LFQ intensity'.format(sample2)] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant, transcriptSwissProtMap, sample2), axis=1)
+        #complete_df['{} log2 protein LFQ intensity'.format(sample1)] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant, transcriptSwissProtMap, sample1), axis=1)
+        #complete_df['{} log2 protein LFQ intensity'.format(sample2)] = complete_df.apply(lambda row: create_quant_column_value_for_result(row, protein_quant, transcriptSwissProtMap, sample2), axis=1)
     
     # parse differential expression analysis results (DESe2), annotate features (genes/transcripts)
     if args.differential_expression is not None:
