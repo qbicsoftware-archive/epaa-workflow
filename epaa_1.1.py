@@ -419,7 +419,7 @@ def read_protein_quant(filename):
     with open(filename, 'r') as inp:
         inpreader = csv.DictReader(inp, delimiter='\t')
         for row in inpreader:
-            if 'CON' in row['Protein IDs'] or 'REV' in row['Protein IDs']:
+            if 'REV' in row['Protein IDs']:
                 pass
             else:
                 valuedict = {}
@@ -427,7 +427,8 @@ def read_protein_quant(filename):
                     if 'LFQ intensity' in key:
                         valuedict[key.replace('LFQ intensity ', '').split('/')[-1]] = val
                 for p in row['Protein IDs'].split(';'):
-                    intensities[p.split('|')[1]] = valuedict
+                    if 'sp' in p:
+                    	intensities[p.split('|')[1]] = valuedict
     return intensities
 
 
@@ -628,7 +629,6 @@ def create_expression_column_value_for_result(row, dict, deseq, gene_id_lengths)
 def create_quant_column_value_for_result(row, dict, swissProtDict, key):
     all_proteins = [swissProtDict[x.transcript_id.split(':')[0]] for x in set(row[0].get_all_transcripts())]
     all_proteins_filtered = set([item for sublist in all_proteins for item in sublist])
-
     values = []
     for p in all_proteins_filtered:
         if p in dict:
