@@ -452,10 +452,9 @@ def read_lig_ID_values(filename):
     intensities = {}
 
     with open(filename, 'r') as inp:
-        inp.readline()
-        for row in inp:
-            values = row.strip().split(',')
-            intensities[values[0]] = (values[2], values[-1])
+        reader = csv.DictReader(inp, delimiter=',')
+        for row in reader:
+            intensities[row['sequence']] = (row['score'], row['intensity'])
 
     return intensities
 
