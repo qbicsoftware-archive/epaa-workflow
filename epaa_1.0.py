@@ -633,7 +633,7 @@ def get_protein_ids_for_transcripts(idtype, transcripts, ensembl_url, reference)
     input_lists = []
 
     # too long requests will fail
-    if len(transcripts) > 500:
+    if len(transcripts) > 400:
         input_lists = [transcripts[i:i + 3] for i in xrange(0, len(transcripts), 3)]
 
     else:
