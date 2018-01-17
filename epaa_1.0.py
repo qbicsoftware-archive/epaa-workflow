@@ -146,7 +146,7 @@ def read_GSvar(filename, pass_only=True):
     global ID_SYSTEM_USED
     RE = re.compile("(\w+):([\w.]+):([&\w]+):\w*:exon(\d+)\D*\d*:(c.\D*([_\d]+)\D*):(p.\D*(\d+)\w*)")
 
-    metadata_list = ["vardbid", "normal_dp", "tumor_dp", "tumor_af", "normal_af", "rna_tum_freq", "rna_tum_depth"]
+    metadata_list = ["vardbid", "normal_dp", "tumor_dp", "tumor_af", "normal_af", "rna_tum_freq", "rna_tum_depth", "donor_freq", "donor_depth", "donor_old_freq", "donor_old_depth"]
 
     list_vars = list()
     lines = list()
@@ -179,6 +179,10 @@ def read_GSvar(filename, pass_only=True):
         normal_af = line.get("normal_af", '')
         rna_tum_freq = line.get("rna_tum_freq", '')
         rna_tum_dp = line.get("rna_tum_depth", '')
+        freq_donor = line.get("donor_freq", '')
+        dp_donor = line.get("donor_depth", '')
+        freq_donor_old = line.get("donor_old_freq", '')
+        dp_donor_old = line.get("donor_old_depth", '')
 
         gene = line.get("gene", '')
 
@@ -234,6 +238,11 @@ def read_GSvar(filename, pass_only=True):
             var.log_metadata("normal_af", normal_af)
             var.log_metadata("rna_tum_freq", rna_tum_freq)
             var.log_metadata("rna_tum_depth", rna_tum_dp)
+            var.log_metadata("donor_freq", freq_donor)
+            var.log_metadata("donor_depth", dp_donor)
+            var.log_metadata("donor_old_freq",freq_donor_old)
+            var.log_metadata("donor_old_depth", dp_donor_old)
+
             dict_vars[var] = var
             list_vars.append(var)
 
