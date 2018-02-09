@@ -1028,13 +1028,13 @@ def __main__():
     if args.peptides is not None:
         peptides, metadata = read_peptide_input(args.peptides)
     else:
-        if args.somatic_mutations.endswith('.GSvar'):
+        if args.somatic_mutations.endswith('.GSvar') or args.somatic_mutations.endswith('.tsv'):
             vl, transcripts, metadata = read_GSvar(args.somatic_mutations)
         elif args.somatic_mutations.endswith('.vcf'):
             vl, transcripts = read_vcf(args.somatic_mutations)
 
         if args.germline_mutations is not None:
-            if args.germline_mutations.endswith('.GSvar'):
+            if args.germline_mutations.endswith('.GSvar') or args.somatic_mutations.endswith('.tsv'):
                 vl_normal, transcripts_germline, metadata = read_GSvar(args.germline_mutations)
             elif args.germline_mutations.endswith('.vcf'):
                 vl_normal, transcripts_germline = read_vcf(args.germline_mutations)
