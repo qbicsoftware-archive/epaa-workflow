@@ -1034,7 +1034,7 @@ def __main__():
             vl, transcripts = read_vcf(args.somatic_mutations)
 
         if args.germline_mutations is not None:
-            if args.germline_mutations.endswith('.GSvar') or args.somatic_mutations.endswith('.tsv'):
+            if args.germline_mutations.endswith('.GSvar') or args.germline_mutations.endswith('.tsv'):
                 vl_normal, transcripts_germline, metadata = read_GSvar(args.germline_mutations)
             elif args.germline_mutations.endswith('.vcf'):
                 vl_normal, transcripts_germline = read_vcf(args.germline_mutations)
