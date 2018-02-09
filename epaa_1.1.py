@@ -166,7 +166,7 @@ def read_GSvar(filename, pass_only=True):
                 continue
             lines.append(row)
     for mut_id, line in enumerate(lines):
-        if pass_only and line["filter"].strip():
+        if "filter" in line and pass_only and line["filter"].strip():
             continue
         genome_start = int(line["start"]) - 1
         genome_stop = int(line["end"]) - 1
