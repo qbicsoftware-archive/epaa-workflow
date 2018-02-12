@@ -581,7 +581,7 @@ def create_wt_seq_column_value(pep, wtseqs):
     variants = []
     #for t in transcript_ids:
     #    variants.extend([v for v in pep[0].get_variants_by_protein(t)])
-    wt = set([str(wtseqs['{}_{}'.format(str(pep[0]), t.transcript_id)]) for t in transcripts if bool(t.vars)])
+    wt = set([str(wtseqs['{}_{}'.format(str(pep[0]), t.transcript_id)]) for t in transcripts if bool(t.vars) and '{}_{}'.format(str(pep[0]), t.transcript_id) in wtseqs])
     if len(wt) is 0:
         return np.nan
     else:
